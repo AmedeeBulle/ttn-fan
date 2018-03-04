@@ -1,0 +1,16 @@
+[Unit]
+Description=Fan control for TTN Gateway
+
+[Service]
+WorkingDirectory=/opt/ttn-fan
+# Comment/uncomment the following lines based on your environment
+# (Virtualenv or not)
+# ExecStart=/opt/ttn-fan/ttn-fan.py
+ExecStart=/opt/ttn-fan/venv/bin/python /opt/ttn-fan/ttn-fan.py
+SyslogIdentifier=ttn-fan
+Environment=PYTHONUNBUFFERED=true
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target
