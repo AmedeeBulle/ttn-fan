@@ -1,5 +1,5 @@
 # TTN Fan
-Simple python script to control temperature on a Raspberry Pi / IC880A DIY TTN Gateway using [dbrgn's  backplane](https://github.com/dbrgn/ic880a-backplane).  
+Simple python script to control temperature on a Raspberry Pi / IC880A DIY [The Things Network](https://www.thethingsnetwork.org/) Gateway using [dbrgn's  backplane](https://github.com/dbrgn/ic880a-backplane).  
 It uses a [PID controller](http://en.wikipedia.org/wiki/PID_controller) to drive the fan.
 
 Temperature and fan percentage are logged in InfluxDB.
