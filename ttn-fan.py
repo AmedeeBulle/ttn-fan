@@ -28,6 +28,7 @@ from signal import signal, SIGTERM
 import RPi.GPIO as GPIO
 import click
 from PID import PID
+from sht21 import SHT21
 from influxdb import InfluxDBClient
 from influxdb import SeriesHelper
 
@@ -128,7 +129,7 @@ class Fan(object):
 
 
 class Temperature(object):
-    """ Simple class for temp sensor """
+    """ Simple class for temp sensor -- kernel driver """
     def __init__(self, temp_sensor_path):
         self._temp_sensor_path = temp_sensor_path
 
@@ -142,6 +143,26 @@ class Temperature(object):
         temp = float(int(temp)) / 1000
 
         return temp
+
+
+class TemperatureUserMode(SHT21):
+    """ Simple class for temp sensor -- user mode driver """
+    def __init__(self, device_number=0):
+        super(TemperatureUserMode, self).__init__(device_number)
+        self._last_temp = 0.0
+
+    @property
+    def temperature(self):
+        try:
+            # If other processes are using the i2c bus concurrently the
+            # reading can fail. We just ignore the error and return the last
+            # successful red
+            temp = self.read_temperature()
+            self._last_temp = temp
+        except IOError, e:
+            print('User-mode sht21: Could not read sensor data: %s' % e)
+
+        return self._last_temp
 
 
 class TTN_PID(PID):
@@ -239,7 +260,9 @@ class ControlLoop(object):
               help='Print temperature at each iteration')
 @click.option('--target-temp', type=float, default=45.0, show_default=True,
               help="Target temperature")
-def ttn_fan(verbose, target_temp):
+@click.option('--user-mode', is_flag=True,
+              help='Use user-mode driver to get temperature')
+def ttn_fan(verbose, target_temp, user_mode):
     # Fan configuration
     fan_pin = 12
     fan_gpio_mode = GPIO.BOARD
@@ -252,14 +275,20 @@ def ttn_fan(verbose, target_temp):
     fan_trigger_range = 2.0
 
     # Temperature sensor -- sht21 temp sensor (provide much better accuracy
-    # than CPU temperature
+    # than CPU temperature)
     temp_sensor_path = '/sys/class/hwmon/hwmon0/temp1_input'
+    i2c_device_number = 1
 
     # PID settings
     pid_kp = 15.0
     pid_ki = 0.5
     pid_kd = 0.0
     pid_sample = 5.0
+
+    if user_mode:
+        sensor = TemperatureUserMode(i2c_device_number)
+    else:
+        sensor = Temperature(temp_sensor_path)
 
     fan = Fan(pin=fan_pin,
               gpio_mode=fan_gpio_mode,
@@ -268,7 +297,7 @@ def ttn_fan(verbose, target_temp):
               max_pct=fan_max_pct,
               kick_start=fan_kick_start,
               trigger_range=fan_trigger_range)
-    sensor = Temperature(temp_sensor_path)
+
     pid = TTN_PID(kp=pid_kp,
                   ki=pid_ki,
                   kd=pid_kd,

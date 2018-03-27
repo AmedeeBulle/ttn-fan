@@ -30,6 +30,12 @@ Start the script as root:
 - `sudo venv/bin/python ttn-fan.py -v` (virtualenv example)
 - `sudo ttn-fan.py -v --target-temp=40.0` (specify target temperature)
 
+__Note__: By default `ttn-fan` uses the `sht21` linux kernel driver. However there are [some issues](http://www.advamation.com/knowhow/raspberrypi/rpi-i2c-bug.html) with the Raspberry Pi...  
+If the kernel driver does not work for you, you can either apply [this kernel patch](https://www.mail-archive.com/linux-hwmon@vger.kernel.org/msg03187.html) to you kernel, or use the `sht21` user-mode driver provided by adding the `--user-mode` option. E.g.:
+```shell
+sudo venv/bin/python ttn-fan.py -v --user-mode
+```
+
 ## Setting up ttn-fan as a service
 When everything is configured, you can start ttn-fan as a service!  
 Use the provided service template -- e.g.:
