@@ -35,6 +35,12 @@ If the kernel driver does not work for you, you can either apply [this kernel pa
 ```shell
 sudo venv/bin/python ttn-fan.py -v --user-mode
 ```
+The downside of the user-mode driver is that it does not allow concurrent access.
+As workaround, you can specify a lock file shared by concurrent applications. E.g.:
+```shell
+sudo venv/bin/python ttn-fan.py -v --user-mode --lock-file /var/run/lock/sht21.lock
+```
+
 
 ## Setting up ttn-fan as a service
 When everything is configured, you can start ttn-fan as a service!  

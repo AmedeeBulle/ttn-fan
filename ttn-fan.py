@@ -25,6 +25,7 @@ dbrgn's backplane.
 from time import sleep, time
 from socket import gethostname
 from signal import signal, SIGTERM
+from fcntl import flock, LOCK_EX, LOCK_UN
 import RPi.GPIO as GPIO
 import click
 from PID import PID
@@ -147,7 +148,12 @@ class Temperature(object):
 
 class TemperatureUserMode(SHT21):
     """ Simple class for temp sensor -- user mode driver """
-    def __init__(self, device_number=0):
+    def __init__(self, device_number=0, lock_file=None):
+        if lock_file:
+            self._handle = open(lock_file, 'w')
+        else:
+            self._handle = None
+
         super(TemperatureUserMode, self).__init__(device_number)
         self._last_temp = 0.0
 
@@ -156,8 +162,14 @@ class TemperatureUserMode(SHT21):
         try:
             # If other processes are using the i2c bus concurrently the
             # reading can fail. We just ignore the error and return the last
-            # successful red
+            # successful read
+            # We implment a simple lock mechanism to allow process
+            # collaboration
+            if self._handle:
+                flock(self._handle, LOCK_EX)
             temp = self.read_temperature()
+            if self._handle:
+                flock(self._handle, LOCK_UN)
             self._last_temp = temp
         except IOError, e:
             print('User-mode sht21: Could not read sensor data: %s' % e)
@@ -262,7 +274,9 @@ class ControlLoop(object):
               help="Target temperature")
 @click.option('--user-mode', is_flag=True,
               help='Use user-mode driver to get temperature')
-def ttn_fan(verbose, target_temp, user_mode):
+@click.option('--lock-file', type=click.Path(), default=None,
+              help='Optional lock file for user-mode')
+def ttn_fan(verbose, target_temp, user_mode, lock_file):
     # Fan configuration
     fan_pin = 12
     fan_gpio_mode = GPIO.BOARD
@@ -286,7 +300,7 @@ def ttn_fan(verbose, target_temp, user_mode):
     pid_sample = 5.0
 
     if user_mode:
-        sensor = TemperatureUserMode(i2c_device_number)
+        sensor = TemperatureUserMode(i2c_device_number, lock_file)
     else:
         sensor = Temperature(temp_sensor_path)
 
