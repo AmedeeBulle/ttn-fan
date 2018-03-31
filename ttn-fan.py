@@ -33,23 +33,12 @@ from sht21 import SHT21
 from influxdb import InfluxDBClient
 from influxdb import SeriesHelper
 
-# InfluxDB connections settings
-influxdb_host = '127.0.0.1'
-influxdb_port = 8089
-influxdb_dbname = 'ttn'
 
-influxdb_client = InfluxDBClient(host=influxdb_host,
-                                 use_udp=True,
-                                 udp_port=influxdb_port,
-                                 database=influxdb_dbname)
-
-
-class InfuxdbSeries(SeriesHelper):
+class InfluxdbSeries(SeriesHelper):
     """Instantiate SeriesHelper to write points to the backend."""
     hostname = gethostname()
 
     class Meta:
-        client = influxdb_client
         series_name = 'fan_value'
         fields = ['value']
         tags = ['host', 'type']
@@ -207,11 +196,12 @@ class TTN_PID(PID):
 
 class ControlLoop(object):
     """ Runs the control loop """
-    def __init__(self, fan, sensor, pid, verbose=True):
+    def __init__(self, fan, sensor, pid, verbose=True, influxdb=False):
         self._fan = fan
         self._sensor = sensor
         self._pid = pid
         self._verbose = verbose
+        self._influxdb = influxdb
 
     def control_loop(self):
         """ Idle loop until temperature overshoots, then starts the PID loop"""
@@ -260,11 +250,12 @@ class ControlLoop(object):
                 print("{0}: Temp {1:6.2f} | Fan {2:6.2f}".format(
                     loop, temp, self._fan.speed))
 
-        InfuxdbSeries(host=InfuxdbSeries.hostname, type='temperature',
-                      value=temp)
-        InfuxdbSeries(host=InfuxdbSeries.hostname, type='fanSpeed',
-                      value=self._fan.speed)
-        InfuxdbSeries.commit()
+        if self._influxdb:
+            InfluxdbSeries(host=InfluxdbSeries.hostname, type='temperature',
+                           value=temp)
+            InfluxdbSeries(host=InfluxdbSeries.hostname, type='fanSpeed',
+                           value=self._fan.speed)
+            InfluxdbSeries.commit()
 
 
 @click.command()
@@ -276,7 +267,9 @@ class ControlLoop(object):
               help='Use user-mode driver to get temperature')
 @click.option('--lock-file', type=click.Path(), default=None,
               help='Optional lock file for user-mode')
-def ttn_fan(verbose, target_temp, user_mode, lock_file):
+@click.option('--influxdb', is_flag=True,
+              help='Log fan and temperature to InfluxDB')
+def ttn_fan(verbose, target_temp, user_mode, lock_file, influxdb):
     # Fan configuration
     fan_pin = 12
     fan_gpio_mode = GPIO.BOARD
@@ -299,10 +292,23 @@ def ttn_fan(verbose, target_temp, user_mode, lock_file):
     pid_kd = 0.0
     pid_sample = 5.0
 
+    # InfluxDB connections settings
+    influxdb_host = '127.0.0.1'
+    influxdb_port = 8089
+    influxdb_dbname = 'ttn'
+
     if user_mode:
         sensor = TemperatureUserMode(i2c_device_number, lock_file)
     else:
         sensor = Temperature(temp_sensor_path)
+
+    if influxdb:
+        # Inject client object in SeriesHelper class
+        InfluxdbSeries.Meta.client = InfluxDBClient(
+            host=influxdb_host,
+            use_udp=True,
+            udp_port=influxdb_port,
+            database=influxdb_dbname)
 
     fan = Fan(pin=fan_pin,
               gpio_mode=fan_gpio_mode,
@@ -321,7 +327,7 @@ def ttn_fan(verbose, target_temp, user_mode, lock_file):
 
     signal(SIGTERM, signal_handler)
 
-    loop = ControlLoop(fan, sensor, pid, verbose)
+    loop = ControlLoop(fan, sensor, pid, verbose, influxdb)
     try:
         loop.control_loop()
     except (KeyboardInterrupt, SigTerm):
