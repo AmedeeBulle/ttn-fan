@@ -26,6 +26,7 @@ from time import sleep, time
 from socket import gethostname
 from signal import signal, SIGTERM
 from fcntl import flock, LOCK_EX, LOCK_UN
+from json import dump
 import RPi.GPIO as GPIO
 import click
 from PID import PID
@@ -196,11 +197,13 @@ class TTN_PID(PID):
 
 class ControlLoop(object):
     """ Runs the control loop """
-    def __init__(self, fan, sensor, pid, verbose=True, influxdb=False):
+    def __init__(self, fan, sensor, pid, verbose=True, status_file=None,
+                 influxdb=False):
         self._fan = fan
         self._sensor = sensor
         self._pid = pid
         self._verbose = verbose
+        self._status_file = status_file
         self._influxdb = influxdb
 
     def control_loop(self):
@@ -250,6 +253,24 @@ class ControlLoop(object):
                 print("{0}: Temp {1:6.2f} | Fan {2:6.2f}".format(
                     loop, temp, self._fan.speed))
 
+        if self._status_file:
+            status = {
+                'loop': loop,
+                'temp': temp,
+                'fan': self._fan.speed
+            }
+            if loop == 'PID':
+                status['PTerm'] = self._pid.PTerm
+                status['ITerm'] = self._pid.ITerm
+                status['DTerm'] = self._pid.DTerm
+                status['output'] = self._pid.output
+            try:
+                with open(self._status_file, 'w') as f:
+                    dump(status, f)
+            except IOError, e:
+                print("Can't write status file {}: {}".format(
+                    self._status_file, e))
+
         if self._influxdb:
             InfluxdbSeries(host=InfluxdbSeries.hostname, type='temperature',
                            value=temp)
@@ -267,9 +288,11 @@ class ControlLoop(object):
               help='Use user-mode driver to get temperature')
 @click.option('--lock-file', type=click.Path(), default=None,
               help='Optional lock file for user-mode')
+@click.option('--status-file', type=click.Path(), default=None,
+              help='Optional status file')
 @click.option('--influxdb', is_flag=True,
               help='Log fan and temperature to InfluxDB')
-def ttn_fan(verbose, target_temp, user_mode, lock_file, influxdb):
+def ttn_fan(verbose, target_temp, user_mode, lock_file, status_file, influxdb):
     # Fan configuration
     fan_pin = 12
     fan_gpio_mode = GPIO.BOARD
@@ -327,7 +350,7 @@ def ttn_fan(verbose, target_temp, user_mode, lock_file, influxdb):
 
     signal(SIGTERM, signal_handler)
 
-    loop = ControlLoop(fan, sensor, pid, verbose, influxdb)
+    loop = ControlLoop(fan, sensor, pid, verbose, status_file, influxdb)
     try:
         loop.control_loop()
     except (KeyboardInterrupt, SigTerm):
