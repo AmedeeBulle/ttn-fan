@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 # Copyright (c) 2013 Richard Jaques
 # See https://github.com/jaques/sht21_python
@@ -9,10 +9,12 @@ import unittest
 
 
 class SHT21(object):
-    """Class to read temperature and humidity from SHT21, much of class was
-    derived from:
+    """Read temperature and humidity.
+
+    Class to read temperature and humidity from SHT21, much of class was derived from:
     http://www.sensirion.com/fileadmin/user_upload/customers/sensirion/Dokumente/Humidity/Sensirion_Humidity_SHT21_Datasheet_V3.pdf
-    and Martin Steppuhn's code from http://www.emsystech.de/raspi-sht21"""
+    and Martin Steppuhn's code from http://www.emsystech.de/raspi-sht21
+    """
 
     # control constants
     _SOFTRESET = 0xFE
@@ -32,18 +34,23 @@ class SHT21(object):
     _HUMIDITY_WAIT_TIME = 0.030     # (datasheet: typ=22, max=29)
 
     def __init__(self, device_number=0):
-        """Opens the i2c device (assuming that the kernel modules have been
-        loaded).  Note that this has only been tested on first revision
+        """Open the i2c device.
+
+        (assuming that the kernel modules have been loaded).
+        Note that this has only been tested on first revision
         raspberry pi where the device_number = 0, but it should work
-        where device_number=1"""
+        where device_number=1
+        """
         self.i2c = open('/dev/i2c-%s' % device_number, 'r+', 0)
         fcntl.ioctl(self.i2c, self.I2C_SLAVE, 0x40)
         self.i2c.write(chr(self._SOFTRESET))
         time.sleep(0.050)
 
     def read_temperature(self):
-        """Reads the temperature from the sensor.  Not that this call blocks
-        for ~86ms to allow the sensor to return the data"""
+        """Read the temperature from the sensor.
+
+        Not that this call blocks for ~86ms to allow the sensor to return the data
+        """
         self.i2c.write(chr(self._TRIGGER_TEMPERATURE_NO_HOLD))
         time.sleep(self._TEMPERATURE_WAIT_TIME)
         data = self.i2c.read(3)
@@ -51,8 +58,10 @@ class SHT21(object):
             return self._get_temperature_from_buffer(data)
 
     def read_humidity(self):
-        """Reads the humidity from the sensor.  Not that this call blocks
-        for ~30ms to allow the sensor to return the data"""
+        """Read the humidity from the sensor.
+
+        Not that this call blocks for ~30ms to allow the sensor to return the data
+        """
         self.i2c.write(chr(self._TRIGGER_HUMIDITY_NO_HOLD))
         time.sleep(self._HUMIDITY_WAIT_TIME)
         data = self.i2c.read(3)
@@ -60,25 +69,28 @@ class SHT21(object):
             return self._get_humidity_from_buffer(data)
 
     def close(self):
-        """Closes the i2c connection"""
+        """Close the i2c connection."""
         self.i2c.close()
 
     def __enter__(self):
-        """used to enable python's with statement support"""
+        """Enable python's with statement support."""
         return self
 
     def __exit__(self, type, value, traceback):
-        """with support"""
+        """Enable python's with statement support."""
         self.close()
 
     @staticmethod
     def _calculate_checksum(data, number_of_bytes):
-        """5.7 CRC Checksum using the polynomial given in the datasheet"""
+        """Calculate checksum.
+
+        5.7 CRC Checksum using the polynomial given in the datasheet
+        """
         # CRC
-        POLYNOMIAL = 0x131  # //P(x)=x^8+x^5+x^4+1 = 100110001
+        POLYNOMIAL = 0x131  # //P(x)=x^8+x^5+x^4+1 = 100110001  # noqa:N806
         crc = 0
         # calculates 8-Bit checksum with given polynomial
-        for byteCtr in range(number_of_bytes):
+        for byteCtr in range(number_of_bytes):  # noqa:N806
             crc ^= (ord(data[byteCtr]))
             for bit in range(8, 0, -1):
                 if crc & 0x80:
@@ -89,7 +101,9 @@ class SHT21(object):
 
     @staticmethod
     def _get_temperature_from_buffer(data):
-        """This function reads the first two bytes of data and
+        """Read temperature.
+
+        This function reads the first two bytes of data and
         returns the temperature in C by using the following function:
         T = -46.85 + (175.72 * (ST/2^16))
         where ST is the value from the sensor
@@ -103,7 +117,9 @@ class SHT21(object):
 
     @staticmethod
     def _get_humidity_from_buffer(data):
-        """This function reads the first two bytes of data and returns
+        """Read humidity.
+
+        This function reads the first two bytes of data and returns
         the relative humidity in percent by using the following function:
         RH = -6 + (125 * (SRH / 2 ^16))
         where SRH is the value read from the sensor
@@ -117,22 +133,30 @@ class SHT21(object):
 
 
 class SHT21Test(unittest.TestCase):
-    """simple sanity test.  Run from the command line with
-    python -m unittest sht21 to check they are still good"""
+    """simple sanity test.
+
+    Run from the command line with
+    python -m unittest sht21 to check they are still good
+    """
 
     def test_temperature(self):
-        """Unit test to check the checksum method"""
+        """Unit test to check the checksum method."""
         calc_temp = SHT21._get_temperature_from_buffer([chr(99), chr(172)])
         self.failUnless(abs(calc_temp - 21.5653979492) < 0.1)
 
     def test_humidity(self):
-        """Unit test to check the humidity computation using example
-        from the v4 datasheet"""
+        """Unit test to check the humidity computation.
+
+        Using example from the v4 datasheet
+        """
         calc_temp = SHT21._get_humidity_from_buffer([chr(99), chr(82)])
         self.failUnless(abs(calc_temp - 42.4924) < 0.001)
 
     def test_checksum(self):
-        """Unit test to check the checksum method.  Uses values read"""
+        """Unit test to check the checksum method.
+
+        Uses values read
+        """
         self.failUnless(SHT21._calculate_checksum([chr(99), chr(172)], 2) == 249)
         self.failUnless(SHT21._calculate_checksum([chr(99), chr(160)], 2) == 132)
 
@@ -140,8 +164,8 @@ class SHT21Test(unittest.TestCase):
 if __name__ == "__main__":
     try:
         with SHT21(0) as sht21:
-            print "Temperature: %s" % sht21.read_temperature()
-            print "Humidity: %s" % sht21.read_humidity()
-    except IOError, e:
-        print e
-        print "Error creating connection to i2c.  This must be run as root"
+            print("Temperature: %s" % sht21.read_temperature())
+            print("Humidity: %s" % sht21.read_humidity())
+    except IOError as e:
+        print(e)
+        print("Error creating connection to i2c.  This must be run as root")

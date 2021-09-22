@@ -1,8 +1,8 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
 # This file is part of ttn-fan.
-# Cpoyright (C) 2018 Philippe Vanhaesendonck
+# Copyright (C) 2018, 2021 Philippe Vanhaesendonck
 #
 # Ttn-fan is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,28 +18,34 @@
 # along with ttn-fan.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Simple temperature controller.
+
 ttn-fan is a simple temperature controller for an IC880A DIY TTN Gateway using
 dbrgn's backplane.
 """
 
-from time import sleep, time
-from socket import gethostname
-from signal import signal, SIGTERM
 from fcntl import flock, LOCK_EX, LOCK_UN
 from json import dump
-import RPi.GPIO as GPIO
+from signal import signal, SIGTERM
+from socket import gethostname
+from time import sleep, time
+
 import click
-from PID import PID
-from sht21 import SHT21
 from influxdb import InfluxDBClient
 from influxdb import SeriesHelper
+from PID import PID
+import RPi.GPIO as GPIO  # noqa:N814
+from sht21 import SHT21
 
 
 class InfluxdbSeries(SeriesHelper):
     """Instantiate SeriesHelper to write points to the backend."""
+
     hostname = gethostname()
 
     class Meta:
+        """Meta class for the SeriesHelper."""
+
         series_name = 'fan_value'
         fields = ['value']
         tags = ['host', 'type']
@@ -47,17 +53,18 @@ class InfluxdbSeries(SeriesHelper):
 
 
 class SigTerm(Exception):
-    """ Exception for SIGTERM """
+    """Exception for SIGTERM."""
+
     pass
 
 
 def signal_handler(sig, frame):
-    """ Signal handler for SIGTERM """
+    """Signal handler for SIGTERM."""
     raise SigTerm
 
 
 class Fan(object):
-    """ Handles fan..."""
+    """Handles fan."""
 
     def __init__(self,
                  pin,
@@ -67,13 +74,16 @@ class Fan(object):
                  max_pct=100.0,
                  kick_start=0.0,
                  trigger_range=0.0):
-        """ Constructor -- Initialize the port
+        """Initialize the port.
+
+        Parameters:
             pin, gpio_mode: fan pin number and gpio mode (BCM / BOARD)
             pwm_freq: PWM frequency (Hz) -- no need for high frequency
             min_pct, max_pct: window of operation for the fan
                 (fans tend to stall at low PWM and can be noisy at full power)
             kick_start: give a short pulse at higher RPM to get the fan
-            starting """
+            starting
+        """
         GPIO.setmode(gpio_mode)
         GPIO.setup(pin, GPIO.OUT)
         self._fan = GPIO.PWM(pin, pwm_freq)
@@ -90,7 +100,7 @@ class Fan(object):
 
     @speed.setter
     def speed(self, new_speed):
-        """ Set the fan speed within operating range """
+        """Set the fan speed within operating range."""
         if new_speed < self._min_pct:
             new_speed = self._min_pct
         if new_speed > self._max_pct:
@@ -108,20 +118,21 @@ class Fan(object):
         return self._trigger_range
 
     def stop(self):
-        """ Fully stop fan """
+        """Fully stop fan."""
         self._fan.ChangeDutyCycle(0)
         self._speed = 0.0
 
     def cleanup(self):
-        """ Release resources """
+        """Release resources."""
         self.stop()
         self._fan.stop()
         GPIO.cleanup()
 
 
 class Temperature(object):
-    """ Simple class for temp sensor -- kernel driver """
-    def __init__(self, temp_sensor_path):
+    """Simple class for temp sensor -- kernel driver."""
+
+    def __init__(self, temp_sensor_path):  # noqa:D107
         self._temp_sensor_path = temp_sensor_path
 
     @property
@@ -137,8 +148,9 @@ class Temperature(object):
 
 
 class TemperatureUserMode(SHT21):
-    """ Simple class for temp sensor -- user mode driver """
-    def __init__(self, device_number=0, lock_file=None):
+    """Simple class for temp sensor -- user mode driver."""
+
+    def __init__(self, device_number=0, lock_file=None):  # noqa:D107
         if lock_file:
             self._handle = open(lock_file, 'w')
         else:
@@ -153,7 +165,7 @@ class TemperatureUserMode(SHT21):
             # If other processes are using the i2c bus concurrently the
             # reading can fail. We just ignore the error and return the last
             # successful read
-            # We implment a simple lock mechanism to allow process
+            # We implement a simple lock mechanism to allow process
             # collaboration
             if self._handle:
                 flock(self._handle, LOCK_EX)
@@ -161,15 +173,16 @@ class TemperatureUserMode(SHT21):
             if self._handle:
                 flock(self._handle, LOCK_UN)
             self._last_temp = temp
-        except IOError, e:
+        except IOError as e:
             print('User-mode sht21: Could not read sensor data: %s' % e)
 
         return self._last_temp
 
 
-class TTN_PID(PID):
-    """ PID controller for the fan """
-    def __init__(self, kp, ki, kd, sample, windup, target):
+class TTN_PID(PID):  # noqa:N801
+    """PID controller for the fan."""
+
+    def __init__(self, kp, ki, kd, sample, windup, target):  # noqa:D107
         self._target = target
         self._windup = windup
         self._sample = sample
@@ -196,8 +209,9 @@ class TTN_PID(PID):
 
 
 class ControlLoop(object):
-    """ Runs the control loop """
-    def __init__(self, fan, sensor, pid, verbose=True, status_file=None,
+    """Runs the control loop."""
+
+    def __init__(self, fan, sensor, pid, verbose=True, status_file=None,  # noqa:D107
                  influxdb=False):
         self._fan = fan
         self._sensor = sensor
@@ -207,7 +221,7 @@ class ControlLoop(object):
         self._influxdb = influxdb
 
     def control_loop(self):
-        """ Idle loop until temperature overshoots, then starts the PID loop"""
+        """Idle loop until temperature overshoots, then starts the PID loop."""
         print('Entering control loop')
         fan_trigger = self._pid.target + self._fan.trigger_range / 2.0
         while True:
@@ -218,7 +232,7 @@ class ControlLoop(object):
             sleep(self._pid.sample)
 
     def _pid_loop(self):
-        """ Run PID loop until temperature drops beyond treshold """
+        """Run PID loop until temperature drops beyond treshold."""
         print('Entering PID loop')
         fan_trigger = self._pid.target - self._fan.trigger_range / 2.0
         self._pid.clear()
@@ -229,8 +243,8 @@ class ControlLoop(object):
             fan_speed = -self._pid.output
 
             # Loop exit condition:
-            if (temp < fan_trigger and fan_speed < 0 and
-                    self._pid.ITerm >= self._pid.windup):
+            if (temp < fan_trigger and fan_speed < 0
+                    and self._pid.ITerm >= self._pid.windup):
                 self._fan.stop()
                 break
 
@@ -241,7 +255,7 @@ class ControlLoop(object):
         print('Exiting PID loop')
 
     def _log(self, loop, temp):
-        """ Log loop status """
+        """Log loop status."""
         if self._verbose:
             if loop == 'PID':
                 print(('{0}: Temp {1:6.2f} | Fan {2:6.2f} | '
@@ -267,7 +281,7 @@ class ControlLoop(object):
             try:
                 with open(self._status_file, 'w') as f:
                     dump(status, f)
-            except IOError, e:
+            except IOError as e:
                 print("Can't write status file {}: {}".format(
                     self._status_file, e))
 
